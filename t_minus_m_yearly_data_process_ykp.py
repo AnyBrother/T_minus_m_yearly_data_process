@@ -116,8 +116,8 @@ def data_lag_span_process_ykp(df, y_name, yearly_name, code_name, lag_time_span,
         temp_t_df = df.loc[df[yearly_name] == t, :]
         check_good_year_num[str(t)] = 0
         default_num = sum(list(temp_t_df[y_name]))
-        # check_good_year_num[str(t) + "_max"] = int(default_num/all_default_num * (len(code_only_list) - default_num_all_only))
-        check_good_year_num[str(t) + "_max"] = 241  # 每年平均241个非违约的
+        check_good_year_num[str(t) + "_max"] = int(default_num/all_default_num * (len(code_only_list) - default_num_all_only))
+        # check_good_year_num[str(t) + "_max"] = 241  # 每年平均241个非违约的
     data_out = dict()
     for k in range(lag_time_span+1):
         data_out['t_{}_df'.format(k)] = pd.DataFrame()
