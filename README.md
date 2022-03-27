@@ -1,8 +1,8 @@
 # T_minus_m_yearly_data_process
 This is the python codes that convert panel data into t-m data.
 
-## 中国上市企业t-m数据库构建的代码操作说明.2019.07.01.
-**可参考操作说明"2019.07.01.t-m数据库构建的代码操作说明.doc"**
+## 中国上市企业t-m数据库构建的代码操作说明.2022.03.27.
+**可参考操作说明"2022.03.27.t-m数据库构建的代码操作说明.doc"**
 ### 一、Python_3.6版本安装及工具包完善
 #### 1.1下载“Anaconda_3.6_version”
 下载方式1：详见网站’ https://www.anaconda.com/download/’；
