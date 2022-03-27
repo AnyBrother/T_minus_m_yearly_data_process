@@ -3,7 +3,10 @@
 @Time    : 2018/11/29 21:59
 @Software: PyCharm
 @Author  : 308-11
-version 1.0: 将t_1, t_2,...,t_5的时间数据-全部导出并存储
+version 1.0(2018/11/29 21:59): 将t_1, t_2,...,t_5的时间数据-全部导出并存储
+version 2.0(2022/03/27 20:00): 之前通过逐个遍历证券代码效率太低,
+                                已更新为效率更高的groupby方式.
+                                即"t_minus_m_shift_ykp()"函数
 """
 import pandas as pd
 import time
@@ -265,63 +268,131 @@ def data_lag_span_process_ykp(df, y_name, yearly_name, code_name, lag_time_span,
     return data_lag_df, data_lag_del_df, data_un_lag_df, data_out, check_good_year_num
 
 
+def t_minus_m_shift_ykp(df, y_name, shift_with_default_name, shift_num, max_shift_num, whe_same=True):
+    """
+    Input:
+        df: 需要进行t_m处理的数据dataframe. 年份排序由小到大.
+        y_name: 违约标签列名list
+        shift_with_default_name: t_m处理随违约状态变动的列名list
+        shift_num: t_m处理中当前的m的取值int. 例如:3
+        max_shift_num: 本次处理中需要的最大的m取值int. 例如:5
+        whe_same: 是否需要t_m处理的m个数据均有相同行. True=是;False=否.
+    """
+    if whe_same: # 默认为True
+        df["Default_original"] = df[y_name]  # 先把原始违约存起来
+        df["Default_shift"] = df[y_name].shift(-max_shift_num)  # 把shift转后的先存起来
+        df[shift_with_default_name] = df[shift_with_default_name].shift(-shift_num)
+        df["Row_need"] = 999
+        if df["Default_shift"].isnull().sum()<df.shape[0]:
+            # 如果shift后不全是空值
+            if (df["Default_shift"]==1).sum()==0:
+                # 如果没有违约,则取非违约shift后的第1行
+                index_need = [int(x+(max_shift_num-shift_num)) for x in [df[df["Default_shift"]==0].index[0]]]
+                df.loc[index_need, "Row_need"] = "Choose"
+            elif (df["Default_shift"]==1).sum()>=0:
+                # 如果有违约,则取全部违约shift后的行
+                index_need = [int(x+(max_shift_num-shift_num)) for x in df[df["Default_shift"]==1].index.to_list()]
+                df.loc[index_need, "Row_need"] = "Choose"
+    else:
+        df["Default_original"] = df[y_name]  # 先把原始违约存起来
+        df["Default_shift"] = df[y_name].shift(-shift_num)  # 把shift转后的先存起来
+        df[shift_with_default_name] = df[shift_with_default_name].shift(-shift_num)
+        df["Row_need"] = 999
+        df.loc[~df["Default_shift"].isnull(), "Row_need"] = "Choose"  # 取所有满足shift_num的行.
+    """
+    Output:
+        df: DataFrame, df[df["Row_need"]=="Choose"]即为所需要的行.
+    """
+    return df
+
+
 def main():
     # 参数设置
-    file_in_name = "上市基输入样例.xlsx"  # 读取excel的文件名称
+    file_in_name = "数据基输入样例.xlsx"  # 读取excel的文件名称
     sheet_in_name = "Sheet1"  # 读取excel的子表名称
     y_name = "(612)违约状态"  # 数据的"违约状态"列名
     need_change_name = ["(612)违约状态"]  # 数据的需要与"违约状态"同时变化的列名list
-    yearly_name = "年份"  # 数据的"年份"列名
-    code_name = "证券代码"  # 数据的企业编码"证券代码"列名
-    lag_time_span = 5  # 所想要的t-m中的m值
-    all_year_sort_list = []  # 标准的年份(由小到大排序)
-    for y in range(2000, 2018, 1):
-        all_year_sort_list.append(str(y))
-    all_year_sort_list = [int(x) for x in all_year_sort_list]
-    all_year_sort_list.sort()
-    all_lag_company_same = True  # True-输出"t-m数据(m=1,2,...的企业数量一样)", False-输出"t-m时刻数据(m=1,2,...的企业数量依次递减)"
-    file_out_name = "上市t-m数据"  # 读取excel的文件名称
-    # 数据读取
-    import os
-    path_in = os.getcwd() + "\\"  # 获取当前工作目录路径
-    df = pd.read_excel(path_in + file_in_name, sheet_name=sheet_in_name)
-    # 进行t-m数据处理
-    if all_lag_company_same:
-        # 输出每个年份企业数量相同的版本,进行t-m拼接
-        Data_output = data_lag_span_process_ykp(df, y_name, yearly_name, code_name, lag_time_span, all_year_sort_list, need_change_name)
-        # 输出excel
-        writer = pd.ExcelWriter(path_in + file_out_name + '(所有年份企业数量一样)[平均抽].xlsx')
-        Data_output[0].to_excel(writer, sheet_name='所有滞后期数据', index=True)
-        Data_output[1].to_excel(writer, sheet_name='符合要求但删去的其他年份数据', index=True)
-        Data_output[2].to_excel(writer, sheet_name='不符合要求的删去的数据', index=True)
-        for key in Data_output[3]:
-            # print(j)
-            Data_output[3][key].to_excel(writer, sheet_name=str(key)+'数据', index=True)
-        writer.save()
+    whether_choosed_faster_methods = True  # 是否选择效率更高的运行方式
+    if whether_choosed_faster_methods:
+        yearly_name = "年份"  # 数据的"年份"列名
+        code_name = "证券代码"  # 数据的企业编码"证券代码"列名
+        max_shift_num = 5  # 所想要的t-m中的m值
+        whe_same = True  # True-每年数据行一致; False-每年数据行不一样,尽可能包含多的债券信息.
+        Data_output = {}  # output dataframe
+        import os
+        path_in = os.getcwd() + "\\"  # 获取当前工作目录路径
+        data = pd.read_excel(path_in + file_in_name, sheet_name=sheet_in_name)
+        col_data = data.columns.to_list()
+        data.sort_values(by=[code_name, yearly_name], axis=0,
+                         ascending=[True, True],
+                         inplace=True,
+                         ignore_index=True)
+        for shift_num in range(max_shift_num + 1):
+            data_temp = data.groupby([code_name], group_keys=False).apply(
+                lambda x: t_minus_m_shift_ykp(x, y_name, need_change_name, shift_num, max_shift_num, whe_same))
+            data_temp.reset_index(drop=True, inplace=True)
+            temp_need = data_temp.loc[data_temp["Row_need"] == "Choose", col_data]
+            temp_need.sort_values(by=[code_name, yearly_name, ], axis=0, ascending=[True, True],
+                                  inplace=True, ignore_index=True)  # sort by ascending yyyymmdd
+            temp_need.reset_index(drop=True, inplace=True)
+            print(shift_num, temp_need[y_name].sum(), temp_need.shape)
+            # 检查无误后, 绝对值指标输出到excel中
+            Data_output["T_{}".format(shift_num)] = temp_need
+            temp_need.to_csv(path_in + "(T_m)_[T_{}].csv".format(shift_num),
+                             encoding="utf_8_sig", index=None)  # 输出为csv格式文件
     else:
-        # 输出每个年份企业数量依次递减的版本,进行t-m拼接
-        writer = pd.ExcelWriter(path_in + file_out_name + '(所有年份企业数量依次递减)[平均抽].xlsx')
-        for i in range(lag_time_span):
-            locals()["Data_output_"+str(i+1)] = data_lag_span_process_ykp(df, y_name, yearly_name, code_name, i+1, all_year_sort_list, need_change_name)
-        for i in range(lag_time_span):
+        #
+        yearly_name = "年份"  # 数据的"年份"列名
+        code_name = "证券代码"  # 数据的企业编码"证券代码"列名
+        lag_time_span = 5  # 所想要的t-m中的m值
+        all_year_sort_list = []  # 标准的年份(由小到大排序)
+        for y in range(2000, 2018, 1):
+            all_year_sort_list.append(str(y))
+        all_year_sort_list = [int(x) for x in all_year_sort_list]
+        all_year_sort_list.sort()
+        all_lag_company_same = True  # True-输出"t-m数据(m=1,2,...的企业数量一样)", False-输出"t-m时刻数据(m=1,2,...的企业数量依次递减)"
+        file_out_name = "上市t-m数据"  # 读取excel的文件名称
+        # 数据读取
+        import os
+        path_in = os.getcwd() + "\\"  # 获取当前工作目录路径
+        df = pd.read_excel(path_in + file_in_name, sheet_name=sheet_in_name)
+        # 进行t-m数据处理
+        if all_lag_company_same:
+            # 输出每个年份企业数量相同的版本,进行t-m拼接
+            Data_output = data_lag_span_process_ykp(df, y_name, yearly_name, code_name, lag_time_span, all_year_sort_list, need_change_name)
             # 输出excel
-            locals()["Data_output_" + str(i + 1)][3]['t_{}_df'.format(i + 1)].to_excel(writer,
-                                                                                       sheet_name='t_{}_数据'.format(i+1),
-                                                                                       index=True)
-        for i in range(lag_time_span):
-            locals()["Data_output_" + str(i + 1)][0].to_excel(writer,
-                                                              sheet_name='所有滞后期数据t_{}'.format(i+1),
-                                                              index=True)
-            locals()["Data_output_" + str(i + 1)][1].to_excel(writer,
-                                                              sheet_name='符合要求但删去的其他年份数据t_{}'.format(i+1),
-                                                              index=True)
-            locals()["Data_output_" + str(i + 1)][2].to_excel(writer,
-                                                              sheet_name='不符合要求的删去的数据t_{}'.format(i+1),
-                                                              index=True)
-        Data_output = locals()["Data_output_5"]
-        writer.save()
-    for t in all_year_sort_list[:-1]:
-        print(str(t), Data_output[4][str(t)], Data_output[4][str(t) + "_max"])
+            writer = pd.ExcelWriter(path_in + file_out_name + '(所有年份企业数量一样)[平均抽].xlsx')
+            Data_output[0].to_excel(writer, sheet_name='所有滞后期数据', index=True)
+            Data_output[1].to_excel(writer, sheet_name='符合要求但删去的其他年份数据', index=True)
+            Data_output[2].to_excel(writer, sheet_name='不符合要求的删去的数据', index=True)
+            for key in Data_output[3]:
+                # print(j)
+                Data_output[3][key].to_excel(writer, sheet_name=str(key)+'数据', index=True)
+            writer.save()
+        else:
+            # 输出每个年份企业数量依次递减的版本,进行t-m拼接
+            writer = pd.ExcelWriter(path_in + file_out_name + '(所有年份企业数量依次递减)[平均抽].xlsx')
+            for i in range(lag_time_span):
+                locals()["Data_output_"+str(i+1)] = data_lag_span_process_ykp(df, y_name, yearly_name, code_name, i+1, all_year_sort_list, need_change_name)
+            for i in range(lag_time_span):
+                # 输出excel
+                locals()["Data_output_" + str(i + 1)][3]['t_{}_df'.format(i + 1)].to_excel(writer,
+                                                                                           sheet_name='t_{}_数据'.format(i+1),
+                                                                                           index=True)
+            for i in range(lag_time_span):
+                locals()["Data_output_" + str(i + 1)][0].to_excel(writer,
+                                                                  sheet_name='所有滞后期数据t_{}'.format(i+1),
+                                                                  index=True)
+                locals()["Data_output_" + str(i + 1)][1].to_excel(writer,
+                                                                  sheet_name='符合要求但删去的其他年份数据t_{}'.format(i+1),
+                                                                  index=True)
+                locals()["Data_output_" + str(i + 1)][2].to_excel(writer,
+                                                                  sheet_name='不符合要求的删去的数据t_{}'.format(i+1),
+                                                                  index=True)
+            Data_output = locals()["Data_output_5"]
+            writer.save()
+        for t in all_year_sort_list[:-1]:
+            print(str(t), Data_output[4][str(t)], Data_output[4][str(t) + "_max"])
     return Data_output
 
 
